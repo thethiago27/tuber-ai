@@ -17,7 +17,7 @@ batch_size = 32
 epochs = 12
 
 bucket_name = 'tuber-ai-image'
-prefix = 'tuberculosis/'
+prefix = 'tuberculosis'
 
 s3 = boto3.client('s3')
 
