@@ -1,6 +1,7 @@
 import os
 import boto3
 import pandas as pd
+from keras.src.callbacks import ReduceLROnPlateau
 from keras.src.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, BatchNormalization, Dropout
@@ -49,20 +50,20 @@ def create_model():
     model = Sequential()
 
     model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(img_width, img_height, 3)))
-    model.add(BatchNormalization())
     model.add(MaxPooling2D((2, 2)))
+    model.add(BatchNormalization())
 
     model.add(Conv2D(64, (3, 3), activation='relu'))
-    model.add(BatchNormalization())
     model.add(MaxPooling2D((2, 2)))
+    model.add(BatchNormalization())
 
     model.add(Conv2D(128, (3, 3), activation='relu'))
-    model.add(BatchNormalization())
     model.add(MaxPooling2D((2, 2)))
+    model.add(BatchNormalization())
 
     model.add(Conv2D(256, (3, 3), activation='relu'))
-    model.add(BatchNormalization())
     model.add(MaxPooling2D((2, 2)))
+    model.add(BatchNormalization())
 
     model.add(Flatten())
 
@@ -76,14 +77,16 @@ def create_model():
 
 def train_model(model, train_generator, validation_generator, epochs):
     early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
-    model.compile(optimizer=Adam(learning_rate=0.0001), loss='binary_crossentropy', metrics=['accuracy'], loss_weights=[0.5])
+    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=2, min_lr=1e-6)
+
+    model.compile(optimizer=Adam(learning_rate=0.0001), loss='binary_crossentropy', metrics=['accuracy'])
     model.fit(
         train_generator,
         steps_per_epoch=train_generator.samples // batch_size,
         validation_data=validation_generator,
         validation_steps=validation_generator.samples // batch_size,
         epochs=epochs,
-        callbacks=[early_stopping]
+        callbacks=[early_stopping, reduce_lr]
     )
 
 
