@@ -4,3 +4,4 @@ tensorflow
 keras
 pillow
 boto3
+tensorrt
