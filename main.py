@@ -1,47 +1,48 @@
 import os
 import boto3
-import tensorflow as tf
 import pandas as pd
+from keras.src.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, BatchNormalization, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.regularizers import l2
-from io import BytesIO
-from PIL import Image
+
 
 data_image_directory = 'dataset/'
 img_width, img_height = 512, 512
 batch_size = 32
 epochs = 12
-bucket_name = 'tuber-ai-images'
+bucket_name = 'tuber-ai-image'
 prefix = 'Tuberculosis'
 
 
-def load_images_from_s3(bucket, prefix):
-    s3 = boto3.client('s3')
-    response = s3.list_objects(Bucket=bucket, Prefix=prefix)
+def load_images():
+    train_datagen = ImageDataGenerator(
+        rescale=1. / 255,
+        rotation_range=20,
+        zoom_range=0.2,
+        horizontal_flip=True,
+        validation_split=0.2
+    )
 
-    images = []
-    labels = []
+    train_generator = train_datagen.flow_from_directory(
+        data_image_directory,
+        target_size=(img_width, img_height),
+        batch_size=batch_size,
+        class_mode='binary',
+        subset='training'
+    )
 
-    for obj in response.get('Contents', []):
-        try:
-            obj_data = s3.get_object(Bucket=bucket, Key=obj['Key'])['Body'].read()
-            image = preprocess_image(obj_data)
-            images.append(image)
-            labels.append(1 if 'tuber' in obj['Key'] else 0)
-        except Exception as e:
-            print(f"Error processing object {obj['Key']}: {str(e)}")
+    validation_generator = train_datagen.flow_from_directory(
+        data_image_directory,
+        target_size=(img_height, img_width),
+        batch_size=batch_size,
+        class_mode='binary',
+        subset='validation'
+    )
 
-    return images, labels
-
-
-def preprocess_image(data):
-    image = Image.open(BytesIO(data))
-    image = image.resize((img_width, img_height))
-    image_array = tf.keras.preprocessing.image.img_to_array(image)
-    return tf.keras.applications.mobilenet_v2.preprocess_input(image_array)
+    return train_generator, validation_generator
 
 
 def create_model():
@@ -73,30 +74,38 @@ def create_model():
     return model
 
 
-def train_model(model, dataset, epochs, callbacks):
+def train_model(model, train_generator, validation_generator, epochs):
+    early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
     model.compile(optimizer=Adam(learning_rate=0.0001), loss='binary_crossentropy', metrics=['accuracy'], loss_weights=[0.5])
-    model.fit(dataset, epochs=epochs, callbacks=callbacks)
+    model.fit(
+        train_generator,
+        steps_per_epoch=train_generator.samples // batch_size,
+        validation_data=validation_generator,
+        validation_steps=validation_generator.samples // batch_size,
+        epochs=epochs,
+        callbacks=[early_stopping]
+    )
 
 
 def save_model_to_s3(model, local_filename, s3_bucket, s3_key_prefix):
     model.save(local_filename)
     s3_key = f'{s3_key_prefix}-{str(pd.Timestamp.utcnow().value)}.h5'
-    boto3.client('s3').upload_file(local_filename, s3_bucket, s3_key)
+
+    access_key = os.environ.get('AWS_ACCESS_KEY_ID')
+    secret_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
+
+    boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=secret_key).upload_file(local_filename, s3_bucket, s3_key)
     print('Model uploaded to S3')
 
     os.remove(local_filename)
 
 
 def main():
-    images, labels = load_images_from_s3(bucket_name, prefix)
-
-    images_tensor = tf.convert_to_tensor(images)
-    dataset = tf.data.Dataset.from_tensor_slices(images_tensor).shuffle(buffer_size=len(images)).batch(batch_size)
+    train_generator, validation_generator = load_images()
 
     model = create_model()
 
-    early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
-    train_model(model, dataset, epochs, callbacks=[early_stopping])
+    train_model(model, train_generator, validation_generator, epochs)
 
     save_model_to_s3(model, 'tuber-ai.h5', 'tuber-ai', 'tuber-ai')
 
