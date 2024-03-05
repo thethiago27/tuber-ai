@@ -10,7 +10,8 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.regularizers import l2
 
 
-data_image_directory = 'dataset/'
+data_tuberculosis_image_directory = 'dataset/tuberculosis'
+data_normal_image_directory = 'dataset/normal'
 img_width, img_height = 512, 512
 batch_size = 32
 epochs = 12
@@ -28,7 +29,7 @@ def load_images():
     )
 
     train_generator = train_datagen.flow_from_directory(
-        data_image_directory,
+        data_tuberculosis_image_directory,
         target_size=(img_width, img_height),
         batch_size=batch_size,
         class_mode='binary',
@@ -36,7 +37,7 @@ def load_images():
     )
 
     validation_generator = train_datagen.flow_from_directory(
-        data_image_directory,
+        data_normal_image_directory,
         target_size=(img_height, img_width),
         batch_size=batch_size,
         class_mode='binary',
