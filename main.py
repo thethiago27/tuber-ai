@@ -1,23 +1,19 @@
 import os
 import boto3
 import pandas as pd
-from keras.src.callbacks import ReduceLROnPlateau
-from keras.src.preprocessing.image import ImageDataGenerator
+from keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, BatchNormalization, Dropout
-from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.regularizers import l2
 
-
-data_tuberculosis_image_directory = 'dataset/tuberculosis'
-data_normal_image_directory = 'dataset/normal'
+data_directory = 'dataset'
 img_width, img_height = 512, 512
 batch_size = 32
 epochs = 12
 bucket_name = 'tuber-ai-image'
 prefix = 'Tuberculosis'
-
 
 def load_images():
     train_datagen = ImageDataGenerator(
@@ -29,7 +25,7 @@ def load_images():
     )
 
     train_generator = train_datagen.flow_from_directory(
-        data_tuberculosis_image_directory,
+        data_directory,
         target_size=(img_width, img_height),
         batch_size=batch_size,
         class_mode='binary',
@@ -37,7 +33,7 @@ def load_images():
     )
 
     validation_generator = train_datagen.flow_from_directory(
-        data_normal_image_directory,
+        data_directory,
         target_size=(img_height, img_width),
         batch_size=batch_size,
         class_mode='binary',
@@ -45,7 +41,6 @@ def load_images():
     )
 
     return train_generator, validation_generator
-
 
 def create_model():
     model = Sequential()
@@ -75,7 +70,6 @@ def create_model():
 
     return model
 
-
 def train_model(model, train_generator, validation_generator, epochs):
     early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=2, min_lr=1e-6)
@@ -90,7 +84,6 @@ def train_model(model, train_generator, validation_generator, epochs):
         callbacks=[early_stopping, reduce_lr]
     )
 
-
 def save_model_to_s3(model, local_filename, s3_bucket, s3_key_prefix):
     model.save(local_filename)
     s3_key = f'{s3_key_prefix}-{str(pd.Timestamp.utcnow().value)}.h5'
@@ -103,7 +96,6 @@ def save_model_to_s3(model, local_filename, s3_bucket, s3_key_prefix):
 
     os.remove(local_filename)
 
-
 def main():
     train_generator, validation_generator = load_images()
 
@@ -113,7 +105,5 @@ def main():
 
     save_model_to_s3(model, 'tuber-ai.h5', 'tuber-ai', 'tuber-ai')
 
-
 if __name__ == "__main__":
     main()
-
